@@ -4,8 +4,8 @@ import json
 import re
 from io import BytesIO
 
-st.set_page_config(page_title="JSON to Shipping Excel Converter", layout="centered")
-st.title("JSON to Shipping Data Excel Converter")
+st.set_page_config(page_title="JSON Converter", layout="centered")
+st.title("JSON Converter")
 st.markdown("Upload multiple JSON files to convert them into a clean, readable Excel file.")
 
 # Helper functions
