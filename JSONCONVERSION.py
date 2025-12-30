@@ -4,8 +4,8 @@ import json
 import re
 from io import BytesIO
 
-st.set_page_config(page_title="JSON Converter", layout="centered")
-st.title("JSON Converter")
+st.set_page_config(page_title="TeamNote JSON Converter", layout="centered")
+st.title("TeamNote JSON Converter")
 st.markdown("Upload multiple JSON files to convert them into a clean, readable Excel file.")
 
 # Helper functions
@@ -28,31 +28,17 @@ def extract_clean_filename(original_filename):
             return base.split("_")[-1]
     return original_filename
 
-# Initialize session state to track processing
-if "processed" not in st.session_state:
-    st.session_state.processed = False
-    st.session_state.df = None
-    st.session_state.excel_data = None
-
-# Reset button (placed early so it's always visible)
-if st.session_state.processed:
-    if st.button("🗑️ Clear All & Start New", type="primary", use_container_width=True):
-        st.session_state.processed = False
-        st.session_state.df = None
-        st.session_state.excel_data = None
-        st.rerun()  # Refresh the app to initial state
-
 # File uploader
 uploaded_files = st.file_uploader(
     "Choose JSON files",
     type=["json"],
     accept_multiple_files=True,
-    key="json_uploader",  # Important: unique key
     help="Upload one or more JSON files with the shipping data structure."
 )
 
-if uploaded_files and not st.session_state.processed:
+if uploaded_files:
     all_rows = []
+    has_error = False
 
     for uploaded_file in uploaded_files:
         original_filename = uploaded_file.name
@@ -61,17 +47,20 @@ if uploaded_files and not st.session_state.processed:
         try:
             data = json.load(uploaded_file)
 
+            # Extract header fields
             swb_no = data.get("SWB-No.", "")
             port_loading = data.get("Port of Loading", "")
             port_discharge = data.get("Port of Discharge", "")
             port_delivery = data.get("Port of Delivery", "")
 
+            # Extract Total fields
             total_cartons = data.get("Total", {}).get("Cartons", "")
             total_weight_str = data.get("Total", {}).get("Weight", "")
             total_volume_str = data.get("Total", {}).get("Volume", "")
             total_weight_kg = extract_weight_kg(total_weight_str)
             total_volume_cbm = extract_volume_cbm(total_volume_str)
 
+            # Process only "Items"
             items = data.get("Items", [])
 
             for item in items:
@@ -99,12 +88,15 @@ if uploaded_files and not st.session_state.processed:
 
         except json.JSONDecodeError:
             st.error(f"Invalid JSON in file: {original_filename}")
+            has_error = True
         except Exception as e:
             st.error(f"Error processing {original_filename}: {str(e)}")
+            has_error = True
 
-    if all_rows:
+    if all_rows and not has_error:
         df = pd.DataFrame(all_rows)
 
+        # Column order
         column_order = [
             "Filename", "SWB-No.", "Port of Loading", "Port of Discharge", "Port of Delivery",
             "Container No.", "Seal No.", "Container Size",
@@ -115,33 +107,28 @@ if uploaded_files and not st.session_state.processed:
         ]
         df = df[column_order]
 
-        # Save to session state
-        st.session_state.df = df
-        st.session_state.processed = True
+        st.success(f"Successfully processed {len(uploaded_files)} file(s) → {len(df)} rows generated.")
 
-        # Generate Excel
+        # Preview table
+        with st.expander("Preview the resulting table", expanded=True):
+            st.dataframe(df, use_container_width=True)
+
+        # Generate and offer Excel download
         output = BytesIO()
         with pd.ExcelWriter(output, engine="openpyxl") as writer:
             df.to_excel(writer, index=False, sheet_name="Shipping Data")
-        st.session_state.excel_data = output.getvalue()
+        output.seek(0)
 
-        st.rerun()  # Refresh to show results
+        st.download_button(
+            label="📥 Download Excel File",
+            data=output,
+            file_name="Shipping_Data_Converted.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            use_container_width=True
+        )
 
-# Show results if processed
-if st.session_state.processed:
-    st.success(f"Successfully processed → {len(st.session_state.df)} rows generated.")
+    elif has_error:
+        st.warning("Some files had errors. Please fix and upload again.")
 
-    with st.expander("Preview the resulting table", expanded=True):
-        st.dataframe(st.session_state.df, use_container_width=True)
-
-    st.download_button(
-        label="📥 Download Excel File",
-        data=st.session_state.excel_data,
-        file_name="Shipping_Data_Converted.xlsx",
-        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        use_container_width=True
-    )
-
-# Initial message if nothing uploaded yet
-if not uploaded_files and not st.session_state.processed:
+else:
     st.info("👆 Upload one or more JSON files to begin.")
